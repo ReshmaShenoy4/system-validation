@@ -1,0 +1,1 @@
+[true*.(StartProcedure || ThrusterOn || ThrusterOff || ThrusterSet1 || ThrusterSet2 || ThrusterAlign || ReadytoDock || ReadytoUndock || CaptureArm || ReleaseArm || OpenHatch || CloseHatch). !StartEmergency*. StopEmergency]false

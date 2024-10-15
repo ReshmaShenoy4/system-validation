@@ -1,0 +1,3 @@
+[true*.(ThrusterOn || ThrusterOff || ThrusterSet1 || ThrusterSet2 || ThrusterAlign || ReadytoDock || ReadytoUndock || CaptureArm || ReleaseArm || OpenHatch || CloseHatch). !StartEmergency*.StopEmergency]false &&
+
+[true*.StartEmergency.true*.(ThrusterOn || ThrusterOff || ThrusterSet1 || ThrusterSet2 || ThrusterAlign || ReadytoDock || ReadytoUndock || CaptureArm || ReleaseArm || OpenHatch || CloseHatch).StopEmergency]false

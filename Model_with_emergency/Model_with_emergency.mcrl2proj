@@ -1,0 +1,8 @@
+<root>
+ <spec>Model_with_emergency_spec.mcrl2</spec>
+ <properties>
+  <property>Emergency</property>
+ </properties>
+ <jittyc>false</jittyc>
+ <linearisation_method>regular</linearisation_method>
+</root>
