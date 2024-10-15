@@ -1,0 +1,89 @@
+sort 
+	Thruster    	= struct on|set1|set2|align|off;
+	PanelSwitch     = struct startprocedure_on| startprocedure_off|ready2dock_on|ready2dock_off|confirmexit_pressed|readytoundock_pressed;
+    ProximityValues = struct proximity_1000|proximity_200|proximity_50|proximity_1|proximity_0;
+	Dock  			= struct captured_arm|uncaptured_arm|hatch_opened|hatch_closed|released_arm;
+	Switch			= struct On|Off;
+
+
+act s_cp2thruster_command, r_cp2thruster_command,cp2thruster_command : PanelSwitch;
+	s_cp2proximity_command, r_cp2proximity_command,cp2proximity_command : Switch;
+	s_cp2docking_command, r_cp2docking_command,cp2docking_command : PanelSwitch;
+	s_thruster_status, r_thruster_status,thruster_status: Thruster;
+	s_hatch_status, r_hatch_status,hatch_status: Dock;
+	s_proximity, r_proximity, proximity_values:ProximityValues;
+	StartProcedure,ReadytoDock,ReadytoUndock,ConfirmExit,ThrusterOn,ThrusterOff,ThrusterSet1,ThrusterSet2,ThrusterAlign,CaptureArm,ReleaseArm,OpenHatch,CloseHatch;	
+
+
+proc P_Thruster(status:Thruster) = 
+ 	s_thruster_status(status).P_Thruster() +
+
+	sum command:PanelSwitch.
+	r_cp2thruster_command(command). 
+	((command == startprocedure_on && status == off)
+	-> ThrusterOn.P_Thruster(on)
+	<> (command==ready2dock_on && status == align)
+	-> ThrusterOff.P_Thruster(off)) +
+
+	sum values:ProximityValues.
+	r_proximity(values).
+	(values==proximity_200 && status==on)
+	-> ThrusterSet1.P_Thruster(set1)
+	<>(values==proximity_50 && status==set1)
+	-> ThrusterSet2.P_Thruster(set2)
+	<>(values==proximity_1 && status==set2)
+	-> ThrusterAlign.P_Thruster(align);
+
+proc P_ControlPanel(switch_pressed: PanelSwitch) =
+        (switch_pressed == startprocedure_on)
+        -> StartProcedure.s_cp2thruster_command(startprocedure_on).s_cp2proximity_command(On).P_ControlPanel(startprocedure_off) +
+		
+	 sum status:Thruster.r_thruster_status(status).
+	(status == align)
+		->ReadytoDock.s_cp2thruster_command(ready2dock_on).s_cp2docking_command(ready2dock_on).P_ControlPanel(ready2dock_off) +
+
+	    sum status:Dock.r_hatch_status(status).
+		(status == hatch_opened)
+		->ConfirmExit.s_cp2docking_command(confirmexit_pressed).P_ControlPanel(confirmexit_pressed)
+		<>(status==hatch_closed)
+		->ReadytoUndock.s_cp2docking_command(readytoundock_pressed).P_ControlPanel(readytoundock_pressed);
+
+
+proc P_Proximity(proximity_values:ProximityValues)=
+	sum command:Switch.
+	r_cp2proximity_command(command).
+	(proximity_values == proximity_200 && command==On)
+	-> s_proximity(proximity_200).P_Proximity(proximity_50) +
+
+	sum status:Thruster.
+	r_thruster_status(status).
+	((proximity_values == proximity_50 && status==set1)
+	->  s_proximity(proximity_50).P_Proximity(proximity_1)
+	<> (proximity_values == proximity_1 && status==set2)
+	->  s_proximity(proximity_1).P_Proximity(proximity_0)
+	<> P_Proximity());
+	
+
+proc P_DockingSystem (status:Dock)=
+	s_hatch_status(status).P_DockingSystem() +
+
+	sum command:PanelSwitch.
+	r_cp2docking_command(command). 
+	((command==ready2dock_on && status == uncaptured_arm)
+	-> CaptureArm.P_DockingSystem(captured_arm)
+	<>(command==confirmexit_pressed && status == hatch_opened)
+	-> CloseHatch.P_DockingSystem(hatch_closed)
+	<>(command==readytoundock_pressed && status==hatch_closed)
+	-> ReleaseArm.P_DockingSystem(released_arm)) + 
+
+	(status==captured_arm)
+	-> OpenHatch.P_DockingSystem(hatch_opened);
+
+	 
+init 
+    allow({StartProcedure,ReadytoDock,ReadytoUndock,ConfirmExit,ThrusterOn,ThrusterSet1,ThrusterSet2,ThrusterAlign,ThrusterOff,CaptureArm,ReleaseArm,OpenHatch,CloseHatch,hatch_status,cp2thruster_command,cp2docking_command,thruster_status,proximity_values,cp2proximity_command}, 
+        comm({s_cp2thruster_command | r_cp2thruster_command -> cp2thruster_command, 
+			  s_cp2proximity_command | r_cp2proximity_command -> cp2proximity_command,
+			  s_cp2docking_command | r_cp2docking_command -> cp2docking_command,
+			  s_hatch_status| r_hatch_status ->hatch_status,
+              s_thruster_status | r_thruster_status -> thruster_status, s_proximity|r_proximity->proximity_values},(P_Thruster(off) || P_ControlPanel(startprocedure_on)||P_Proximity(proximity_200)||P_DockingSystem(uncaptured_arm))));
