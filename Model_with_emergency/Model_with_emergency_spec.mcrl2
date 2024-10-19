@@ -29,7 +29,7 @@ proc P_Thruster(status:Thruster) =
 	(values==proximity_200 && status==on)
 	-> ThrusterSet1.P_Thruster(set1)
 	<>(values==proximity_50 && status==set1)
-	-> ThrusterSet2.P_Thruster(thruster_failure)
+	-> ThrusterSet2.P_Thruster(set2)
 	<>(values==proximity_1 && status==set2)
 	-> ThrusterAlign.P_Thruster(align);
 
@@ -42,6 +42,9 @@ proc P_ControlPanel(switch_pressed:PanelSwitch,mode:Modes) =
 
         (switch_pressed == startprocedure_on && mode==normal)
         -> StartProcedure.s_cp2thruster_command(startprocedure_on).s_cp2proximity_command(On).P_ControlPanel(switch_pressed=startprocedure_off) +
+	
+		(switch_pressed == confirmexit_pressed && mode==normal)
+		->ReadytoUndock.s_cp2docking_command(readytoundock_pressed).P_ControlPanel(switch_pressed=readytoundock_pressed) +
 		
 	 	sum status:Thruster.r_thruster_status(status).
 		(status == thruster_failure)
@@ -53,9 +56,9 @@ proc P_ControlPanel(switch_pressed:PanelSwitch,mode:Modes) =
 		(status == docking_failure)
 		->P_ControlPanel(mode=emergency)
 		<>(status == hatch_opened && mode==normal)
-		->ConfirmExit.s_cp2docking_command(confirmexit_pressed).P_ControlPanel(switch_pressed=confirmexit_pressed)
-		<>(status==hatch_closed && mode==normal)
-		->ReadytoUndock.s_cp2docking_command(readytoundock_pressed).P_ControlPanel(switch_pressed=readytoundock_pressed);
+		-> ConfirmExit.P_ControlPanel(switch_pressed=confirmexit_pressed)
+		<> (status == released_arm && mode==normal)
+		-> P_ControlPanel(switch_pressed = startprocedure_on);
 
 
 proc P_Proximity(proximity_values:ProximityValues)=
@@ -80,15 +83,15 @@ proc P_DockingSystem (status:Dock)=
 	r_cp2docking_command(command). 
 	((command==ready2dock_on && status == uncaptured_arm)
 	-> CaptureArm.P_DockingSystem(captured_arm)
-	<>(command==confirmexit_pressed && status == hatch_opened)
-	-> CloseHatch.P_DockingSystem(hatch_closed)
-	<>(command==readytoundock_pressed && status==hatch_closed)
-	-> ReleaseArm.P_DockingSystem(released_arm)) + 
+	<>(command==readytoundock_pressed && status==hatch_opened)
+	-> CloseHatch.P_DockingSystem(hatch_closed)) + 
 
 	(status==captured_arm)
 	-> IsDocked.P_DockingSystem(docked)
 	<> (status==docked)
-	-> OpenHatch.P_DockingSystem(hatch_opened);
+	-> OpenHatch.P_DockingSystem(hatch_opened)
+	<>(status==hatch_closed)
+	->ReleaseArm.P_DockingSystem(released_arm);
 
 	 
 init 
