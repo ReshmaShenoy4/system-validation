@@ -1,0 +1,103 @@
+sort 
+	Thruster    	= struct on|set1|set2|align|off|thruster_failure;
+	PanelSwitch     = struct startprocedure_on| startprocedure_off|readytodock_on|readytodock_off|confirmexit_pressed|readytoundock_pressed|stopemergency_pressed;
+	Dock  			= struct captured_arm|uncaptured_arm|docked|hatch_opened|hatch_closed|released_arm|docking_failure;
+	Switch			= struct On|Off;
+	Modes			= struct emergency|normal|emergency_indicated;
+
+act s_cp2thruster_command, r_cp2thruster_command,cp2thruster_command : PanelSwitch;
+	s_cp2proximity_command, r_cp2proximity_command,cp2proximity_command : Switch;
+	s_cp2docking_command, r_cp2docking_command,cp2docking_command : PanelSwitch;
+	s_thruster_status, r_thruster_status,thruster_status: Thruster;
+	s_hatch_status, r_hatch_status,hatch_status: Dock;
+	s_proximity, r_proximity, proximity_value:Nat;
+	startEmergency,stopEmergency,startProcedure,readyToDock,readyToUndock,confirmExit,thrusterOn,thrusterOff,thrusterSet1,thrusterSet2,thrusterAlign,captureArm,releaseArm,openHatch,closeHatch,isDocked,isAligned;	
+
+%Thruster Process
+proc P_Thruster(status:Thruster) = 
+ 	s_thruster_status(status).P_Thruster() +
+
+	sum command:PanelSwitch.
+	r_cp2thruster_command(command). 
+	((command == startprocedure_on && status == off)
+	-> thrusterOn.P_Thruster(on)
+	<> (command==readytodock_on && status == align)
+	-> thrusterOff.P_Thruster(off)) +
+
+	sum values:Nat.
+	r_proximity(values).
+	(values==200 && status==on)
+	-> thrusterSet1.P_Thruster(set1)
+	<>(values==50 && status==set1)
+	-> thrusterSet2.P_Thruster(set2)
+	<>(values==1 && status==set2)
+	-> thrusterAlign.isAligned.P_Thruster(align);
+
+%Proximity Sensor Process
+proc P_Proximity(proximity_values:Nat)=
+	sum command:Switch.
+	r_cp2proximity_command(command).
+	(proximity_values == 200 && command==On)
+	-> s_proximity(200).P_Proximity(50) +
+
+	sum status:Thruster.
+	r_thruster_status(status).
+	((proximity_values == 50 && status==set1)
+	->  s_proximity(50).P_Proximity(1)
+	<> (proximity_values == 1 && status==set2)
+	->  s_proximity(1).P_Proximity(0)
+	<> P_Proximity());
+	
+%DOcking Process
+proc P_DockingSystem (status:Dock)=
+	s_hatch_status(status).P_DockingSystem() +
+
+	sum command:PanelSwitch.
+	r_cp2docking_command(command). 
+	((command==readytodock_on && status == uncaptured_arm)
+	-> captureArm.P_DockingSystem(captured_arm)
+	<>(command==readytoundock_pressed && status==hatch_opened)
+	-> closeHatch.P_DockingSystem(hatch_closed)) + 
+
+	(status==captured_arm)
+	-> isDocked.P_DockingSystem(docked)
+	<> (status==docked)
+	-> openHatch.P_DockingSystem(hatch_opened)
+	<>(status==hatch_closed)
+	->releaseArm.P_DockingSystem(released_arm);
+
+%Control Panel Process
+proc P_ControlPanel(switch_pressed:PanelSwitch,mode:Modes) =
+	(mode == emergency)
+	-> startEmergency.P_ControlPanel(switch_pressed = stopemergency_pressed,mode=emergency_indicated) +	
+		
+	(switch_pressed == stopemergency_pressed)	
+	-> stopEmergency.P_ControlPanel(mode=normal)+
+
+    (switch_pressed == startprocedure_on && mode==normal)
+    -> startProcedure.s_cp2thruster_command(startprocedure_on).s_cp2proximity_command(On).P_ControlPanel(switch_pressed=startprocedure_off) +
+	
+	(switch_pressed == confirmexit_pressed && mode==normal)
+	->readyToUndock.s_cp2docking_command(readytoundock_pressed).P_ControlPanel(switch_pressed=readytoundock_pressed) +
+		
+	sum status:Thruster.r_thruster_status(status).
+	(status == thruster_failure)
+	-> P_ControlPanel(mode=emergency)
+	<>(status == align && mode==normal)
+	->readyToDock.s_cp2thruster_command(readytodock_on).s_cp2docking_command(readytodock_on).P_ControlPanel(switch_pressed=readytodock_off) +
+
+	sum status:Dock.r_hatch_status(status).
+	(status == docking_failure)
+	->P_ControlPanel(mode=emergency)
+	<>(status == hatch_opened && mode==normal)
+	-> confirmExit.P_ControlPanel(switch_pressed=confirmexit_pressed)
+	<> (status == released_arm && mode==normal)
+	-> P_ControlPanel(switch_pressed = startprocedure_on);
+ 
+init 
+    allow({startEmergency,stopEmergency,startProcedure,readyToDock,readyToUndock,confirmExit,thrusterOn,thrusterSet1,thrusterSet2,thrusterAlign,thrusterOff,captureArm,releaseArm,isDocked,isAligned,openHatch,closeHatch,hatch_status,cp2thruster_command,cp2docking_command,thruster_status,proximity_value,cp2proximity_command}, 
+        comm({s_cp2thruster_command | r_cp2thruster_command -> cp2thruster_command, 
+			  s_cp2proximity_command | r_cp2proximity_command -> cp2proximity_command,
+			  s_cp2docking_command | r_cp2docking_command -> cp2docking_command,
+			  s_hatch_status| r_hatch_status ->hatch_status,
+              s_thruster_status | r_thruster_status -> thruster_status, s_proximity|r_proximity->proximity_value},(P_Thruster(off) || P_ControlPanel(startprocedure_on,normal)||P_Proximity(200)||P_DockingSystem(uncaptured_arm))));
